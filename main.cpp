@@ -4,6 +4,9 @@
 #include <QCryptographicHash>
 
 // Returns empty QByteArray() on failure.
+
+static int level = 0;
+
 QByteArray fileChecksum(const QString &fileName,
                         QCryptographicHash::Algorithm hashAlgorithm)
 {
@@ -18,9 +21,9 @@ QByteArray fileChecksum(const QString &fileName,
     return QByteArray("error md5");
 }
 
-QByteArray GetRapidNumber(const QFileInfo& info)
+QByteArray GetRapidNumber(const QFileInfo& info, int level)
 {
-    if (info.size() < 1024 * 1024)
+    if (info.size() < 1024 * 1024 || level > 10)
     {
         return fileChecksum(info.absoluteFilePath(), QCryptographicHash::Md5);
     }
@@ -33,8 +36,25 @@ QByteArray GetRapidNumber(const QFileInfo& info)
         return array64;
     }
 
-    qint64 step = (info.size() - 100) / 256;
-    for (qint64 i = 0; i < 256; ++i)
+    qint64 rapidStep = 0;
+    switch (level)
+    {
+    case 0:
+        rapidStep = 8;
+        break;
+    case 1:
+        rapidStep = 32;
+        break;
+    case 2:
+        rapidStep = 128;
+        break;
+    default:
+        rapidStep = 256;
+        break;
+    }
+
+    qint64 step = (info.size() - 100) / rapidStep;
+    for (qint64 i = 0; i < rapidStep; ++i)
     {
         qint64 start = step * i;
         file.seek(start);
@@ -85,7 +105,7 @@ struct FileCell
 
     void UpdateMd5()
     {
-        md5 = GetRapidNumber(info.absoluteFilePath());
+        md5 = GetRapidNumber(info.absoluteFilePath(), level);
     }
 
     void Update64()
@@ -143,7 +163,7 @@ void MatchFile(QMap<qint64, FileCell*>& sizeInfos,
         md5Infos.insert(fc->md5);
     }
 
-    QByteArray md5 = GetRapidNumber(absPath);
+    QByteArray md5 = GetRapidNumber(absPath, level);
     if (!md5Infos.contains(md5))
     {
         md5Infos.insert(md5);
@@ -165,6 +185,11 @@ int main(int argc, char *argv[])
     {
         qDebug() << "error param";
         return 0;
+    }
+
+    if (a.arguments().size() >= 3)
+    {
+        level = a.arguments().at(2).toInt();
     }
 
     QDir dir(a.arguments().at(1));
